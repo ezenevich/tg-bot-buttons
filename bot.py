@@ -27,7 +27,7 @@ if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN not provided")
 
 client = MongoClient(MONGO_URI)
-db = client.get_default_database() or client["tg-game"]
+db = client["tg-game"]
 users = db["users"]
 games = db["games"]
 
