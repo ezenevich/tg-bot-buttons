@@ -1,6 +1,6 @@
 # Telegram Game Bot
 
-Simple Telegram game bot using [Telegraf](https://telegraf.js.org/) and [Mongoose](https://mongoosejs.com/).
+Simple Telegram game bot written in Python using [python-telegram-bot](https://python-telegram-bot.org/) and [MongoDB](https://www.mongodb.com/).
 
 ## Features
 - `/start` — register player and show status
@@ -11,29 +11,26 @@ Simple Telegram game bot using [Telegraf](https://telegraf.js.org/) and [Mongoos
 
 ## Development
 
-Set environment variables:
+Create a `.env` file with:
+
 ```
 BOT_TOKEN=telegram-bot-token
-MONGO_URI=mongodb://localhost:27017/tg-game
+MONGO_URI=mongodb://root:root@localhost:27017/tg-game?authSource=admin
+ADMIN_IDS=123456789
 ```
 
 Install dependencies and run:
-```
-npm install
-npm run dev
-```
 
-Build and run:
 ```
-npm run build
-npm start
+pip install -r requirements.txt
+python bot.py
 ```
 
 ## Docker
 
 Run the bot and MongoDB with Docker Compose:
+
 ```
 cp .env.example .env
-docker-compose up --build
+docker compose up --build
 ```
-

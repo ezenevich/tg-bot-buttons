@@ -1,16 +1,14 @@
 version: '3.8'
 services:
-  app:
+  bot:
     build: .
-    container_name: tg-bot-buttons
     restart: unless-stopped
     env_file:
       - .env
     depends_on:
       - mongo
   mongo:
-    image: mongo:latest
-    container_name: mongodb
+    image: mongo:6
     restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
@@ -21,4 +19,3 @@ services:
       - mongo-data:/data/db
 volumes:
   mongo-data:
-
