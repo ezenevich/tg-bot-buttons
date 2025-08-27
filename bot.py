@@ -31,6 +31,9 @@ db = client["tg-game"]
 users = db["users"]
 games = db["games"]
 
+# Ensure each Telegram user ID is stored only once
+users.create_index("telegram_id", unique=True)
+
 awaiting_code: Set[int] = set()
 pending_kick: Dict[int, str] = {}
 
@@ -53,19 +56,23 @@ def is_admin(game: Dict, tg_id: int) -> bool:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tg_id = update.effective_user.id
+    code = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    users.update_one(
+        {"telegram_id": tg_id},
+        {
+            "$setOnInsert": {
+                "telegram_id": tg_id,
+                "username": update.effective_user.username,
+                "first_name": update.effective_user.first_name,
+                "last_name": update.effective_user.last_name,
+                "code": code,
+                "alive": True,
+                "discovered_opponent_ids": [],
+            }
+        },
+        upsert=True,
+    )
     user = users.find_one({"telegram_id": tg_id})
-    if not user:
-        code = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-        user = {
-            "telegram_id": tg_id,
-            "username": update.effective_user.username,
-            "first_name": update.effective_user.first_name,
-            "last_name": update.effective_user.last_name,
-            "code": code,
-            "alive": True,
-            "discovered_opponent_ids": [],
-        }
-        users.insert_one(user)
     game = get_game()
     if not user.get("alive", True):
         kicker = users.find_one({"_id": user.get("kicked_by")})
