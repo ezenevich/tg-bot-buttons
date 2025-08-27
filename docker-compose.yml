@@ -9,12 +9,12 @@ services:
     depends_on:
       - mongo
   mongo:
-    image: mongo:7
+    image: mongo:latest
     container_name: mongodb
     restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_ROOT_PASSWORD: root
     ports:
       - "27017:27017"
     volumes:

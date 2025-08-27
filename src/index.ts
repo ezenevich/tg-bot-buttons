@@ -7,7 +7,7 @@ import { Game, IGame } from './models/Game';
 config();
 
 const botToken = process.env.BOT_TOKEN || '';
-const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/tg-game';
+const mongoUri = process.env.MONGO_URI || '';
 
 if (!botToken) {
   throw new Error('BOT_TOKEN not provided');
