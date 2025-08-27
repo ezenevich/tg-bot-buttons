@@ -28,3 +28,12 @@ Build and run:
 npm run build
 npm start
 ```
+
+## Docker
+
+Run the bot and MongoDB with Docker Compose:
+```
+cp .env.example .env
+docker-compose up --build
+```
+
