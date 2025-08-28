@@ -68,7 +68,9 @@ async def show_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     pairs = list(emoji_pairs.find().sort("number", 1))
     text = "Пары:\n" + "\n".join(
-        f"{number_to_square(p['number'])} - {p['circle']}" for p in pairs
+        f"{number_to_square(p['number'])} - {p['circle']} "
+        f"{'заблокирована' if p.get('blocked') else ('занята' if p.get('taken') else 'свободна')}"
+        for p in pairs
     )
     buttons = [
         [InlineKeyboardButton("Перемешать пары", callback_data="shuffle_pairs")],
@@ -92,7 +94,9 @@ async def shuffle_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     random.shuffle(circles)
     emoji_pairs.delete_many({})
     for i, circle in enumerate(circles, start=1):
-        emoji_pairs.insert_one({"number": i, "circle": circle})
+        emoji_pairs.insert_one(
+            {"number": i, "circle": circle, "taken": False, "blocked": False}
+        )
     pairs = list(emoji_pairs.find().sort("number", 1))
     text = "Пары перемешаны:\n" + "\n".join(
         f"{number_to_square(p['number'])} - {p['circle']}" for p in pairs
@@ -199,6 +203,7 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             }
         },
     )
+    emoji_pairs.update_many({}, {"$set": {"taken": False, "blocked": False}})
     await context.bot.send_message(tg_id, "Игра завершена.")
     user = users.find_one({"telegram_id": tg_id})
     await send_menu(tg_id, user, get_game(), context)
