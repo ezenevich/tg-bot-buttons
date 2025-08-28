@@ -89,21 +89,22 @@ async def button_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     game = get_game()
     if not is_admin(game, tg_id):
         return
-    pairs = list(emoji_pairs.find().sort("number", 1))
+    pairs = list(emoji_pairs.find({"taken": True}).sort("number", 1))
     lines = []
     for p in pairs:
         number = number_to_square(p["number"])
         circle = p["circle"]
         player = users.find_one({"number": p["number"]})
-        if not p.get("taken") or not player:
-            status = "свободна"
-        elif not player.get("alive", True) or p.get("blocked"):
-            status = "использована"
+        if not player:
+            continue
+        status = ["Есть игрок 👤"]
+        if not player.get("alive", True) or p.get("blocked"):
+            status.append("Заблокирована 🚫")
         elif player.get("code_used"):
-            status = "найдена"
+            status.append("На руках ✋")
         else:
-            status = "свободна"
-        lines.append(f"{number} {circle} - {status}")
+            status.append("В игре 🟢")
+        lines.append(f"{number} {circle} - {', '.join(status)}")
     buttons = [[InlineKeyboardButton("Назад", callback_data="back_to_menu")]]
     await context.bot.send_message(
         tg_id, "\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons)

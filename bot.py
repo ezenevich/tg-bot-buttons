@@ -8,6 +8,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+import random
 
 from storage import (
     BOT_TOKEN,
@@ -290,8 +291,47 @@ async def kick_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
     for r in recipients:
         await context.bot.send_message(r["telegram_id"], message)
-    if opponent["telegram_id"] != tg_id:
-        await send_menu(tg_id, user, get_game(), context)
+    if opponent["_id"] == user["_id"]:
+        available_ids = [
+            oid for oid in user.get("discovered_opponent_ids", []) if oid != user["_id"]
+        ]
+        alive_players = list(
+            users.find({"alive": True, "telegram_id": {"$ne": tg_id}})
+        )
+        if available_ids and alive_players:
+            random.shuffle(alive_players)
+            for i, btn_id in enumerate(available_ids):
+                recipient = alive_players[i % len(alive_players)]
+                users.update_one(
+                    {"_id": recipient["_id"]},
+                    {"$addToSet": {"discovered_opponent_ids": btn_id}},
+                )
+                btn_player = users.find_one({"_id": btn_id})
+                if btn_player:
+                    circle = number_to_circle(btn_player.get("number"))
+                    await context.bot.send_message(
+                        recipient["telegram_id"],
+                        f"Вам досталась кнопка {circle} от {user.get('number')} игрока.",
+                    )
+    else:
+        opponent_buttons = [
+            oid for oid in opponent.get("discovered_opponent_ids", []) if oid != opponent["_id"]
+        ]
+        if opponent_buttons:
+            for btn_id in opponent_buttons:
+                users.update_one(
+                    {"_id": user["_id"]},
+                    {"$addToSet": {"discovered_opponent_ids": btn_id}},
+                )
+                btn_player = users.find_one({"_id": btn_id})
+                if btn_player:
+                    circle = number_to_circle(btn_player.get("number"))
+                    await context.bot.send_message(
+                        tg_id,
+                        f"Вам досталась кнопка {circle} от {opponent.get('number')} игрока.",
+                    )
+        if opponent["telegram_id"] != tg_id:
+            await send_menu(tg_id, user, get_game(), context)
 
 
 
