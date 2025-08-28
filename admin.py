@@ -100,23 +100,12 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = users.find_one({"telegram_id": tg_id})
         await send_menu(tg_id, user, game, context)
         return
-    games.update_one(
-        {"_id": game["_id"]},
-        {"$set": {"status": "ended", "ended_at": datetime.utcnow()}},
+    # Notify all connected players about game end before resetting
+    players = list(
+        users.find({"telegram_id": {"$nin": game.get("admin_ids", [])}})
     )
-    await context.bot.send_message(tg_id, "Игра завершена.")
-    user = users.find_one({"telegram_id": tg_id})
-    await send_menu(tg_id, user, get_game(), context)
-
-
-async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await query.message.delete()
-    tg_id = query.from_user.id
-    game = get_game()
-    if not is_admin(game, tg_id):
-        return
+    for p in players:
+        await context.bot.send_message(p["telegram_id"], "Игра завершена.")
     games.update_one(
         {"_id": game["_id"]},
         {
@@ -141,7 +130,7 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             }
         },
     )
-    await context.bot.send_message(tg_id, "Игра сброшена.")
+    await context.bot.send_message(tg_id, "Игра завершена.")
     user = users.find_one({"telegram_id": tg_id})
     await send_menu(tg_id, user, get_game(), context)
 
@@ -149,6 +138,5 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 def register_admin_handlers(application):
     application.add_handler(CallbackQueryHandler(start_game, pattern="^start_game$"))
     application.add_handler(CallbackQueryHandler(end_game, pattern="^end_game$"))
-    application.add_handler(CallbackQueryHandler(reset_game, pattern="^reset_game$"))
     application.add_handler(CallbackQueryHandler(add_codes, pattern="^add_codes$"))
     application.add_handler(CallbackQueryHandler(player_list, pattern="^player_list$"))
