@@ -1,17 +1,16 @@
 # Telegram Game Bot
 
-Simple Telegram game bot written in Python using [python-telegram-bot](https://python-telegram-bot.org/) and [MongoDB](https://www.mongodb.com/).
+Простой бот-игра для Telegram на Python с использованием [python-telegram-bot](https://python-telegram-bot.org/) и [MongoDB](https://www.mongodb.com/).
 
-## Features
-- `/start` — register player and show status
-- `/code` — submit secret codes to discover opponents
-- `/list` — show discovered opponents
-- `/kick` — eliminate a discovered opponent
-- `/start_game`, `/end_game`, `/reset_game` — admin controls
+## Возможности
+- `/start` — регистрация игрока и показ меню действий
+- Ввод секретного кода и список противников через инлайн-кнопки
+- Выбивание обнаруженных противников с подтверждением
+- Кнопки администратора: старт игры, завершение и сброс
 
-## Development
+## Разработка
 
-Create a `.env` file with:
+Создайте файл `.env` со следующими параметрами:
 
 ```
 BOT_TOKEN=telegram-bot-token
@@ -19,7 +18,7 @@ MONGO_URI=mongodb://root:root@localhost:27017/tg-game?authSource=admin
 ADMIN_IDS=123456789
 ```
 
-Install dependencies and run:
+Установите зависимости и запустите бота:
 
 ```
 pip install -r requirements.txt
@@ -28,7 +27,7 @@ python bot.py
 
 ## Docker
 
-Run the bot and MongoDB with Docker Compose:
+Запустите бота и MongoDB через Docker Compose:
 
 ```
 cp .env.example .env
