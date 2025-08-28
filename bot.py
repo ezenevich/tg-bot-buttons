@@ -1,6 +1,5 @@
 import os
 import random
-import string
 from datetime import datetime
 from typing import Dict, Set
 
@@ -36,28 +35,52 @@ users.create_index("telegram_id", unique=True)
 
 awaiting_code: Set[int] = set()
 pending_kick: Dict[int, str] = {}
+awaiting_admin_codes: Set[int] = set()
 
 
 async def send_menu(
     chat_id: int, user: Dict, game: Dict, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    buttons = [
-        [InlineKeyboardButton("Ввести код", callback_data="menu_code")],
-        [InlineKeyboardButton("Список противников", callback_data="menu_list")],
-    ]
+    if game.get("status") != "running" and not is_admin(game, chat_id):
+        await context.bot.send_message(chat_id, "Игра еще не началась.")
+        return
+    buttons = []
+    if game.get("status") == "running":
+        buttons.extend(
+            [
+                [InlineKeyboardButton("Ввести код", callback_data="menu_code")],
+                [InlineKeyboardButton("Список противников", callback_data="menu_list")],
+            ]
+        )
     if is_admin(game, chat_id):
         admin_buttons = []
         if game.get("status") == "waiting":
-            admin_buttons.append(InlineKeyboardButton("Начать игру", callback_data="start_game"))
+            admin_buttons.append(
+                InlineKeyboardButton("Начать игру", callback_data="start_game")
+            )
+            admin_buttons.append(
+                InlineKeyboardButton("Добавить коды", callback_data="add_codes")
+            )
         elif game.get("status") == "running":
-            admin_buttons.append(InlineKeyboardButton("Закончить игру", callback_data="end_game"))
-        if game.get("status") != "waiting":
-            admin_buttons.append(InlineKeyboardButton("Сбросить игру", callback_data="reset_game"))
+            admin_buttons.append(
+                InlineKeyboardButton("Закончить игру", callback_data="end_game")
+            )
+            admin_buttons.append(
+                InlineKeyboardButton("Сбросить игру", callback_data="reset_game")
+            )
+            admin_buttons.append(
+                InlineKeyboardButton("Добавить коды", callback_data="add_codes")
+            )
+        else:
+            admin_buttons.append(
+                InlineKeyboardButton("Сбросить игру", callback_data="reset_game")
+            )
         if admin_buttons:
             buttons.append(admin_buttons)
-    await context.bot.send_message(
-        chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    if buttons:
+        await context.bot.send_message(
+            chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(buttons)
+        )
 
 
 def get_name(user: Dict) -> str:
@@ -67,7 +90,7 @@ def get_name(user: Dict) -> str:
 def get_game() -> Dict:
     game = games.find_one()
     if not game:
-        game = {"status": "waiting", "admin_ids": ADMIN_IDS}
+        game = {"status": "waiting", "admin_ids": ADMIN_IDS, "codes": []}
         games.insert_one(game)
     return game
 
@@ -78,11 +101,21 @@ def is_admin(game: Dict, tg_id: int) -> bool:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tg_id = update.effective_user.id
-    code = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-    users.update_one(
-        {"telegram_id": tg_id},
-        {
-            "$setOnInsert": {
+    game = get_game()
+    user = users.find_one({"telegram_id": tg_id})
+    if not user:
+        code = None
+        if not is_admin(game, tg_id):
+            codes = game.get("codes", [])
+            if not codes:
+                await update.message.reply_text(
+                    "Нет доступных кодов. Свяжитесь с админом."
+                )
+                return
+            code = random.choice(codes)
+            games.update_one({"_id": game["_id"]}, {"$pull": {"codes": code}})
+        users.insert_one(
+            {
                 "telegram_id": tg_id,
                 "username": update.effective_user.username,
                 "first_name": update.effective_user.first_name,
@@ -91,18 +124,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "alive": True,
                 "discovered_opponent_ids": [],
             }
-        },
-        upsert=True,
-    )
-    user = users.find_one({"telegram_id": tg_id})
-    game = get_game()
+        )
+        user = users.find_one({"telegram_id": tg_id})
     if not user.get("alive", True):
         kicker = users.find_one({"_id": user.get("kicked_by")})
         text = f"Игра окончена. Вас выбил {get_name(kicker) if kicker else 'кто-то'}."
         await update.message.reply_text(text)
         return
     if game.get("status") != "running":
-        await update.message.reply_text("Игра еще не началась.")
+        if is_admin(game, tg_id):
+            await send_menu(tg_id, user, game, context)
+        else:
+            await update.message.reply_text("Игра еще не началась.")
         return
     await send_menu(tg_id, user, game, context)
 
@@ -116,7 +149,7 @@ async def code_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user = users.find_one({"telegram_id": tg_id})
     if game.get("status") != "running":
         await context.bot.send_message(tg_id, "Игра еще не началась.")
-        if user:
+        if user and is_admin(game, tg_id):
             await send_menu(tg_id, user, game, context)
         return
     if not user or not user.get("alive", True):
@@ -128,10 +161,25 @@ async def code_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tg_id = update.effective_user.id
+    text = update.message.text.strip()
+    if tg_id in awaiting_admin_codes:
+        game = get_game()
+        codes = [c.strip().upper() for c in text.split() if c.strip()]
+        if codes:
+            games.update_one(
+                {"_id": game["_id"]}, {"$addToSet": {"codes": {"$each": codes}}}
+            )
+            await update.message.reply_text("Коды добавлены.")
+        else:
+            await update.message.reply_text("Нет кодов.")
+        awaiting_admin_codes.remove(tg_id)
+        user = users.find_one({"telegram_id": tg_id})
+        await send_menu(tg_id, user, game, context)
+        return
     if tg_id not in awaiting_code:
         return
     awaiting_code.remove(tg_id)
-    code = update.message.text.strip().upper()
+    code = text.upper()
     user = users.find_one({"telegram_id": tg_id})
     if not user:
         return
@@ -172,7 +220,7 @@ async def list_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user = users.find_one({"telegram_id": tg_id})
     if game.get("status") != "running":
         await context.bot.send_message(tg_id, "Игра еще не началась.")
-        if user:
+        if user and is_admin(game, tg_id):
             await send_menu(tg_id, user, game, context)
         return
     if not user or not user.get("alive", True):
@@ -267,6 +315,18 @@ async def cancel_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await send_menu(query.from_user.id, user, get_game(), context)
 
 
+async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    tg_id = query.from_user.id
+    game = get_game()
+    if not is_admin(game, tg_id):
+        return
+    awaiting_admin_codes.add(tg_id)
+    await context.bot.send_message(tg_id, "Отправьте коды через пробел.")
+
+
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -324,15 +384,24 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     games.update_one(
         {"_id": game["_id"]},
-        {"$set": {"status": "waiting", "started_at": None, "ended_at": None}},
+        {
+            "$set": {
+                "status": "waiting",
+                "started_at": None,
+                "ended_at": None,
+                "codes": [],
+            }
+        },
     )
+    users.delete_many({"telegram_id": {"$nin": ADMIN_IDS}})
     users.update_many(
-        {},
+        {"telegram_id": {"$in": ADMIN_IDS}},
         {
             "$set": {
                 "alive": True,
                 "kicked_by": None,
                 "discovered_opponent_ids": [],
+                "code": None,
             }
         },
     )
@@ -355,6 +424,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(start_game, pattern="^start_game$"))
     application.add_handler(CallbackQueryHandler(end_game, pattern="^end_game$"))
     application.add_handler(CallbackQueryHandler(reset_game, pattern="^reset_game$"))
+    application.add_handler(CallbackQueryHandler(add_codes, pattern="^add_codes$"))
 
     application.run_polling()
 
