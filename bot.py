@@ -47,6 +47,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             }
         )
         user = users.find_one({"telegram_id": tg_id})
+        if not is_admin_flag:
+            for admin_id in game.get("admin_ids", []):
+                await context.bot.send_message(
+                    admin_id,
+                    f"Подключился игрок {get_name(user)}",
+                )
     if not user.get("alive", True):
         kicker = users.find_one({"_id": user.get("kicked_by")})
         text = f"Игра окончена. Вас выбил {get_name(kicker) if kicker else 'кто-то'}."
