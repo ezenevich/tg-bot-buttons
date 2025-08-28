@@ -39,11 +39,6 @@ def number_to_circle(n) -> str:
 async def send_menu(
     chat_id: int, user: Dict, game: Dict, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    await context.bot.send_message(
-        chat_id,
-        "Для возвращения в меню используйте кнопку \"Начать\"",
-        reply_markup=START_KEYBOARD,
-    )
     if game.get("status") != "running" and not is_admin(game, chat_id):
         await context.bot.send_message(chat_id, "Игра еще не началась.")
         return

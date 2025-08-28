@@ -48,7 +48,7 @@ async def player_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         text = "Подключенные игроки:\n" + "\n".join(
             f"{get_name(p)} {number_to_square(p.get('number'))}{number_to_circle(p.get('number'))} "
             f"{p.get('code') or '-'} "
-            f"{'жив ✅' if p.get('alive', True) else 'выбыл 🚫'}"
+            f"{'в игре ✅' if p.get('alive', True) else 'заблокирован 🚫'}"
             for p in players
         )
     else:
