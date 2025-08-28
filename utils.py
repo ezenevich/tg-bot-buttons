@@ -3,7 +3,7 @@ from typing import Dict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from storage import games, ADMIN_IDS, START_KEYBOARD, SQUARE_NUMBERS, emoji_pairs
+from storage import games, ADMIN_IDS, START_KEYBOARD, SQUARE_NUMBERS, buttons
 
 
 def get_name(user: Dict) -> str:
@@ -30,7 +30,7 @@ def number_to_square(n) -> str:
 
 def number_to_circle(n) -> str:
     if isinstance(n, int):
-        pair = emoji_pairs.find_one({"number": n})
+        pair = buttons.find_one({"number": n, "special": False})
         if pair:
             return pair.get("circle", "")
     return ""
@@ -64,6 +64,13 @@ async def send_menu(
             buttons.append(
                 [InlineKeyboardButton("Пары", callback_data="show_pairs")]
             )
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        "Добавить особую кнопку", callback_data="add_special"
+                    )
+                ]
+            )
         elif game.get("status") == "running":
             buttons.append(
                 [
@@ -75,13 +82,6 @@ async def send_menu(
             )
             buttons.append(
                 [InlineKeyboardButton("Кнопки", callback_data="button_status")]
-            )
-            buttons.append(
-                [
-                    InlineKeyboardButton(
-                        "Добавить особую кнопку", callback_data="add_special"
-                    )
-                ]
             )
     if buttons:
         await context.bot.send_message(

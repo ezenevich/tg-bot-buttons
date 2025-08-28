@@ -19,8 +19,7 @@ from storage import (
     awaiting_admin_codes,
     awaiting_special_codes,
     START_KEYBOARD,
-    emoji_pairs,
-    special_buttons,
+    buttons,
 )
 from utils import (
     get_name,
@@ -61,9 +60,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "username": update.effective_user.username,
                 "first_name": update.effective_user.first_name,
                 "last_name": update.effective_user.last_name,
-                "code": None,
                 "alive": True,
                 "discovered_opponent_ids": [],
+                "special_button_ids": [],
                 "isAdmin": is_admin_flag,
                 "number": number,
             }
@@ -72,8 +71,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not is_admin_flag:
             square = number_to_square(number)
             circle = number_to_circle(number)
-            emoji_pairs.update_one(
-                {"number": number}, {"$set": {"taken": True, "blocked": False}}
+            buttons.update_one(
+                {"number": number, "special": False},
+                {
+                    "$set": {
+                        "taken": True,
+                        "blocked": False,
+                        "player_id": user["_id"],
+                        "code_used": False,
+                    }
+                },
             )
             for admin_id in game.get("admin_ids", []):
                 await context.bot.send_message(
@@ -144,13 +151,14 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         code = text.strip().upper()
         if code:
             try:
-                special_buttons.insert_one(
+                buttons.insert_one(
                     {
                         "code": code,
                         "emoji": "\U0001F500",
-                        "taken": True,
+                        "taken": False,
                         "blocked": False,
                         "code_used": False,
+                        "special": True,
                     }
                 )
                 await update.message.reply_text("Особая кнопка добавлена.")
@@ -169,43 +177,61 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = users.find_one({"telegram_id": tg_id})
     if not user:
         return
-    opponent = users.find_one(
-        {"code": code, "alive": True, "code_used": {"$ne": True}}
+    btn = buttons.find_one(
+        {
+            "code": code,
+            "special": False,
+            "blocked": {"$ne": True},
+            "code_used": {"$ne": True},
+        }
     )
-    if not opponent:
-        special = special_buttons.find_one(
-            {"code": code, "code_used": {"$ne": True}, "blocked": {"$ne": True}}
+    if not btn:
+        special = buttons.find_one(
+            {
+                "code": code,
+                "special": True,
+                "blocked": {"$ne": True},
+                "taken": {"$ne": True},
+            }
         )
         if special:
-            special_buttons.update_one(
-                {"_id": special["_id"]}, {"$set": {"code_used": True}}
+            buttons.update_one({"_id": special["_id"]}, {"$set": {"taken": True}})
+            users.update_one(
+                {"_id": user["_id"]},
+                {"$addToSet": {"special_button_ids": special["_id"]}},
             )
-            pairs = list(emoji_pairs.find({"taken": True, "blocked": False}))
-            circles = [p["circle"] for p in pairs]
-            random.shuffle(circles)
-            for p, circle in zip(pairs, circles):
-                emoji_pairs.update_one({"_id": p["_id"]}, {"$set": {"circle": circle}})
             await update.message.reply_text(
-                "Вы нашли особую кнопку. Цвета перемешаны!"
+                "Вы нашли особую кнопку. Она добавлена в доступные кнопки."
             )
         else:
-            blocked_user = users.find_one({"code": code, "alive": False})
-            if blocked_user:
+            blocked_regular = buttons.find_one(
+                {"code": code, "special": False, "blocked": True}
+            )
+            if blocked_regular:
                 await update.message.reply_text("Кнопка заблокирована.")
             else:
-                blocked_special = special_buttons.find_one({"code": code, "blocked": True})
-                if blocked_special:
-                    await update.message.reply_text("Кнопка заблокирована.")
+                blocked_special = buttons.find_one(
+                    {"code": code, "special": True, "blocked": True}
+                )
+                if blocked_special or buttons.find_one(
+                    {"code": code, "special": True, "taken": True}
+                ):
+                    await update.message.reply_text("Код не найден или уже использован.")
                 else:
                     await update.message.reply_text("Код не найден или уже использован.")
+        await send_menu(tg_id, user, get_game(), context)
+        return
+    opponent = users.find_one({"_id": btn.get("player_id"), "alive": True})
+    if not opponent:
+        await update.message.reply_text("Код не найден или уже использован.")
         await send_menu(tg_id, user, get_game(), context)
         return
     if opponent["_id"] in user.get("discovered_opponent_ids", []):
         await update.message.reply_text("Уже найден.")
         await send_menu(tg_id, user, get_game(), context)
         return
-    result = users.update_one(
-        {"_id": opponent["_id"], "code_used": {"$ne": True}},
+    result = buttons.update_one(
+        {"_id": btn["_id"], "code_used": {"$ne": True}},
         {"$set": {"code_used": True}},
     )
     if result.modified_count == 0:
@@ -243,22 +269,34 @@ async def list_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     ids = user.get("discovered_opponent_ids", [])
     opponents = list(users.find({"_id": {"$in": ids}, "alive": True}))
-    if not opponents:
+    special_ids = user.get("special_button_ids", [])
+    specials = list(buttons.find({"_id": {"$in": special_ids}}))
+    if not opponents and not specials:
         await context.bot.send_message(tg_id, "Нет доступных кнопок.")
         await send_menu(tg_id, user, game, context)
         return
-    buttons = [
-        [
-            InlineKeyboardButton(
-                number_to_circle(o.get("number")),
-                callback_data=f"confirm_kick:{o['_id']}",
-            )
-        ]
-        for o in opponents
-    ]
-    buttons.append([InlineKeyboardButton("Назад", callback_data="back_to_menu")])
+    keyboard = []
+    for o in opponents:
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    number_to_circle(o.get("number")),
+                    callback_data=f"confirm_kick:{o['_id']}",
+                )
+            ]
+        )
+    for s in specials:
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    s.get("emoji", "\U0001F500"),
+                    callback_data=f"use_special:{s['_id']}",
+                )
+            ]
+        )
+    keyboard.append([InlineKeyboardButton("Назад", callback_data="back_to_menu")])
     await context.bot.send_message(
-        tg_id, "Доступные кнопки:", reply_markup=InlineKeyboardMarkup(buttons)
+        tg_id, "Доступные кнопки:", reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -295,6 +333,45 @@ async def cancel_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await send_menu(tg_id, user, game, context)
 
 
+async def use_special(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    btn_id = query.data.split(":", 1)[1]
+    special = buttons.find_one({"_id": ObjectId(btn_id), "special": True})
+    if not special:
+        return
+    tg_id = query.from_user.id
+    user = users.find_one({"telegram_id": tg_id})
+    if not user:
+        return
+    active = list(
+        buttons.find(
+            {
+                "special": False,
+                "player_id": {"$ne": None},
+                "blocked": {"$ne": True},
+            }
+        )
+    )
+    triples = [(b["number"], b["circle"], b["player_id"]) for b in active]
+    random.shuffle(triples)
+    for b, (n, c, pid) in zip(active, triples):
+        buttons.update_one(
+            {"_id": b["_id"]},
+            {"$set": {"number": n, "circle": c, "player_id": pid}},
+        )
+    buttons.update_one(
+        {"_id": special["_id"]},
+        {"$set": {"code_used": True, "blocked": True, "taken": True}},
+    )
+    users.update_one(
+        {"_id": user["_id"]}, {"$pull": {"special_button_ids": special["_id"]}}
+    )
+    await context.bot.send_message(tg_id, "Цвета и номера перемешаны!")
+    await send_menu(tg_id, user, get_game(), context)
+
+
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -324,8 +401,9 @@ async def kick_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if opponent["telegram_id"] != tg_id:
             await send_menu(tg_id, user, get_game(), context)
         return
-    emoji_pairs.update_one(
-        {"number": opponent.get("number")}, {"$set": {"blocked": True}}
+    buttons.update_one(
+        {"player_id": opponent["_id"], "special": False},
+        {"$set": {"blocked": True}},
     )
     await context.bot.send_message(
         opponent["telegram_id"], "Вас заблокировали 🚫. Игра окончена."
@@ -398,6 +476,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
     application.add_handler(CallbackQueryHandler(confirm_kick, pattern=r"^confirm_kick:"))
     application.add_handler(CallbackQueryHandler(cancel_kick, pattern="^cancel_kick$"))
+    application.add_handler(CallbackQueryHandler(use_special, pattern=r"^use_special:"))
     application.add_handler(CallbackQueryHandler(kick_action, pattern=r"^kick:"))
 
     register_admin_handlers(application)
