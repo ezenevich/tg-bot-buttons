@@ -8,9 +8,11 @@ from storage import (
     users,
     games,
     awaiting_admin_codes,
+    awaiting_special_codes,
     ADMIN_IDS,
     START_KEYBOARD,
     emoji_pairs,
+    special_buttons,
 )
 from utils import (
     get_game,
@@ -32,6 +34,18 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     awaiting_admin_codes.add(tg_id)
     await context.bot.send_message(tg_id, "Отправьте коды через пробел.")
+
+
+async def add_special(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    tg_id = query.from_user.id
+    game = get_game()
+    if not is_admin(game, tg_id):
+        return
+    awaiting_special_codes.add(tg_id)
+    await context.bot.send_message(tg_id, "Отправьте код особой кнопки.")
 
 
 async def player_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -105,6 +119,16 @@ async def button_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             status.append("В игре ⛳")
         lines.append(f"{number} {circle} - {', '.join(status)}")
+    specials = list(special_buttons.find({"taken": True}))
+    for s in specials:
+        status = []
+        if s.get("blocked"):
+            status.append("Заблокирована 🚫")
+        elif s.get("code_used"):
+            status.append("На руках ✋")
+        else:
+            status.append("В игре ⛳")
+        lines.append(f"Особая {s.get('emoji', '🔀')} - {', '.join(status)}")
     buttons = [[InlineKeyboardButton("Назад", callback_data="back_to_menu")]]
     await context.bot.send_message(
         tg_id, "\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons)
@@ -234,6 +258,7 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         },
     )
     emoji_pairs.update_many({}, {"$set": {"taken": False, "blocked": False}})
+    special_buttons.delete_many({})
     await context.bot.send_message(tg_id, "Игра завершена.")
     user = users.find_one({"telegram_id": tg_id})
     await send_menu(tg_id, user, get_game(), context)
@@ -243,6 +268,7 @@ def register_admin_handlers(application):
     application.add_handler(CallbackQueryHandler(start_game, pattern="^start_game$"))
     application.add_handler(CallbackQueryHandler(end_game, pattern="^end_game$"))
     application.add_handler(CallbackQueryHandler(add_codes, pattern="^add_codes$"))
+    application.add_handler(CallbackQueryHandler(add_special, pattern="^add_special$"))
     application.add_handler(CallbackQueryHandler(player_list, pattern="^player_list$"))
     application.add_handler(CallbackQueryHandler(show_pairs, pattern="^show_pairs$"))
     application.add_handler(CallbackQueryHandler(shuffle_pairs, pattern="^shuffle_pairs$"))

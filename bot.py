@@ -9,6 +9,7 @@ from telegram.ext import (
     filters,
 )
 import random
+from pymongo.errors import DuplicateKeyError
 
 from storage import (
     BOT_TOKEN,
@@ -16,8 +17,10 @@ from storage import (
     games,
     awaiting_code,
     awaiting_admin_codes,
+    awaiting_special_codes,
     START_KEYBOARD,
     emoji_pairs,
+    special_buttons,
 )
 from utils import (
     get_name,
@@ -136,6 +139,29 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = users.find_one({"telegram_id": tg_id})
         await send_menu(tg_id, user, game, context)
         return
+    if tg_id in awaiting_special_codes:
+        game = get_game()
+        code = text.strip().upper()
+        if code:
+            try:
+                special_buttons.insert_one(
+                    {
+                        "code": code,
+                        "emoji": "\U0001F500",
+                        "taken": True,
+                        "blocked": False,
+                        "code_used": False,
+                    }
+                )
+                await update.message.reply_text("Особая кнопка добавлена.")
+            except DuplicateKeyError:
+                await update.message.reply_text("Такой код уже существует.")
+        else:
+            await update.message.reply_text("Нет кода.")
+        awaiting_special_codes.remove(tg_id)
+        user = users.find_one({"telegram_id": tg_id})
+        await send_menu(tg_id, user, game, context)
+        return
     if tg_id not in awaiting_code:
         return
     awaiting_code.remove(tg_id)
@@ -147,11 +173,31 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         {"code": code, "alive": True, "code_used": {"$ne": True}}
     )
     if not opponent:
-        blocked_user = users.find_one({"code": code, "alive": False})
-        if blocked_user:
-            await update.message.reply_text("Кнопка заблокирована.")
+        special = special_buttons.find_one(
+            {"code": code, "code_used": {"$ne": True}, "blocked": {"$ne": True}}
+        )
+        if special:
+            special_buttons.update_one(
+                {"_id": special["_id"]}, {"$set": {"code_used": True}}
+            )
+            pairs = list(emoji_pairs.find({"taken": True, "blocked": False}))
+            circles = [p["circle"] for p in pairs]
+            random.shuffle(circles)
+            for p, circle in zip(pairs, circles):
+                emoji_pairs.update_one({"_id": p["_id"]}, {"$set": {"circle": circle}})
+            await update.message.reply_text(
+                "Вы нашли особую кнопку. Цвета перемешаны!"
+            )
         else:
-            await update.message.reply_text("Код не найден или уже использован.")
+            blocked_user = users.find_one({"code": code, "alive": False})
+            if blocked_user:
+                await update.message.reply_text("Кнопка заблокирована.")
+            else:
+                blocked_special = special_buttons.find_one({"code": code, "blocked": True})
+                if blocked_special:
+                    await update.message.reply_text("Кнопка заблокирована.")
+                else:
+                    await update.message.reply_text("Код не найден или уже использован.")
         await send_menu(tg_id, user, get_game(), context)
         return
     if opponent["_id"] in user.get("discovered_opponent_ids", []):
@@ -296,7 +342,13 @@ async def kick_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             oid for oid in user.get("discovered_opponent_ids", []) if oid != user["_id"]
         ]
         alive_players = list(
-            users.find({"alive": True, "telegram_id": {"$ne": tg_id}})
+            users.find(
+                {
+                    "alive": True,
+                    "telegram_id": {"$ne": tg_id},
+                    "isAdmin": {"$ne": True},
+                }
+            )
         )
         if available_ids and alive_players:
             random.shuffle(alive_players)

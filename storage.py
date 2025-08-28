@@ -19,12 +19,14 @@ db = client["tg-game"]
 users = db["users"]
 games = db["games"]
 emoji_pairs = db["emoji_pairs"]
+special_buttons = db["special_buttons"]
 
 # Ensure each Telegram user ID is stored only once
 users.create_index("telegram_id", unique=True)
 
 awaiting_code: Set[int] = set()
 awaiting_admin_codes: Set[int] = set()
+awaiting_special_codes: Set[int] = set()
 
 CIRCLE_EMOJIS = ["🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫", "⚪"]
 SQUARE_NUMBERS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
@@ -35,6 +37,8 @@ if emoji_pairs.count_documents({}) == 0:
         emoji_pairs.insert_one(
             {"number": i, "circle": circle, "taken": False, "blocked": False}
         )
+
+special_buttons.create_index("code", unique=True)
 
 # Reply keyboard with a physical "Начать" button so players can always return to the menu
 START_KEYBOARD = ReplyKeyboardMarkup([[KeyboardButton("Начать")]], resize_keyboard=True)

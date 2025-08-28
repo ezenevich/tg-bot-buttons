@@ -76,6 +76,13 @@ async def send_menu(
             buttons.append(
                 [InlineKeyboardButton("Кнопки", callback_data="button_status")]
             )
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        "Добавить особую кнопку", callback_data="add_special"
+                    )
+                ]
+            )
     if buttons:
         await context.bot.send_message(
             chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(buttons)
