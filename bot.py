@@ -1,18 +1,5 @@
-import os
-import random
-from datetime import datetime
-from typing import Dict, Set
-
-from dotenv import load_dotenv
-from pymongo import MongoClient
 from bson import ObjectId
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Update,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-)
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -22,99 +9,17 @@ from telegram.ext import (
     filters,
 )
 
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-MONGO_URI = os.getenv("MONGO_URI")
-ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x]
-
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN not provided")
-
-client = MongoClient(MONGO_URI)
-db = client["tg-game"]
-users = db["users"]
-games = db["games"]
-
-# Ensure each Telegram user ID is stored only once
-users.create_index("telegram_id", unique=True)
-
-awaiting_code: Set[int] = set()
-pending_kick: Dict[int, str] = {}
-awaiting_admin_codes: Set[int] = set()
-
-# Reply keyboard with a physical "Начать" button so players can always return to the menu
-START_KEYBOARD = ReplyKeyboardMarkup([[KeyboardButton("Начать")]], resize_keyboard=True)
-
-
-async def send_menu(
-    chat_id: int, user: Dict, game: Dict, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    # Always remind players about the "Начать" button
-    await context.bot.send_message(
-        chat_id,
-        "Для возвращения в меню используйте кнопку \"Начать\"",
-        reply_markup=START_KEYBOARD,
-    )
-    if game.get("status") != "running" and not is_admin(game, chat_id):
-        await context.bot.send_message(chat_id, "Игра еще не началась.")
-        return
-    buttons = []
-    if game.get("status") == "running":
-        buttons.extend(
-            [
-                [InlineKeyboardButton("Ввести код", callback_data="menu_code")],
-                [InlineKeyboardButton("Список противников", callback_data="menu_list")],
-            ]
-        )
-    if is_admin(game, chat_id):
-        admin_buttons = []
-        if game.get("status") == "waiting":
-            admin_buttons.append(
-                InlineKeyboardButton("Начать игру", callback_data="start_game")
-            )
-            admin_buttons.append(
-                InlineKeyboardButton("Добавить коды", callback_data="add_codes")
-            )
-        elif game.get("status") == "running":
-            admin_buttons.append(
-                InlineKeyboardButton("Закончить игру", callback_data="end_game")
-            )
-            admin_buttons.append(
-                InlineKeyboardButton("Сбросить игру", callback_data="reset_game")
-            )
-            admin_buttons.append(
-                InlineKeyboardButton("Добавить коды", callback_data="add_codes")
-            )
-        else:
-            admin_buttons.append(
-                InlineKeyboardButton("Сбросить игру", callback_data="reset_game")
-            )
-        admin_buttons.append(
-            InlineKeyboardButton("Кол-во игроков", callback_data="player_count")
-        )
-        if admin_buttons:
-            buttons.append(admin_buttons)
-    if buttons:
-        await context.bot.send_message(
-            chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(buttons)
-        )
-
-
-def get_name(user: Dict) -> str:
-    return "@" + (user.get("username") or user.get("first_name") or "user")
-
-
-def get_game() -> Dict:
-    game = games.find_one()
-    if not game:
-        game = {"status": "waiting", "admin_ids": ADMIN_IDS, "codes": []}
-        games.insert_one(game)
-    return game
-
-
-def is_admin(game: Dict, tg_id: int) -> bool:
-    return tg_id in game.get("admin_ids", [])
+from storage import (
+    BOT_TOKEN,
+    users,
+    games,
+    awaiting_code,
+    pending_kick,
+    awaiting_admin_codes,
+    START_KEYBOARD,
+)
+from utils import get_name, get_game, is_admin, send_menu
+from admin import register_admin_handlers
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -230,9 +135,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         {"$addToSet": {"discovered_opponent_ids": user["_id"]}},
     )
     await update.message.reply_text(f"Вы обнаружили {get_name(opponent)}.")
-    await context.bot.send_message(
-        opponent["telegram_id"], f"Вы обнаружили {get_name(user)}."
-    )
     await send_menu(tg_id, user, get_game(), context)
 
 
@@ -344,141 +246,6 @@ async def cancel_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await send_menu(query.from_user.id, user, get_game(), context)
 
 
-async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await query.message.delete()
-    tg_id = query.from_user.id
-    game = get_game()
-    if not is_admin(game, tg_id):
-        return
-    awaiting_admin_codes.add(tg_id)
-    await context.bot.send_message(tg_id, "Отправьте коды через пробел.")
-
-
-async def player_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await query.message.delete()
-    tg_id = query.from_user.id
-    game = get_game()
-    if not is_admin(game, tg_id):
-        return
-    count = users.count_documents({"telegram_id": {"$nin": game.get("admin_ids", [])}})
-    await context.bot.send_message(tg_id, f"Подключено игроков: {count}")
-    user = users.find_one({"telegram_id": tg_id})
-    await send_menu(tg_id, user, game, context)
-
-
-async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await query.message.delete()
-    tg_id = query.from_user.id
-    game = get_game()
-    if not is_admin(game, tg_id):
-        return
-    if game.get("status") != "waiting":
-        await context.bot.send_message(tg_id, "Игра уже началась.")
-        user = users.find_one({"telegram_id": tg_id})
-        await send_menu(tg_id, user, game, context)
-        return
-    players = list(
-        users.find({"telegram_id": {"$nin": game.get("admin_ids", [])}, "code": None})
-    )
-    codes = game.get("codes", [])
-    if len(codes) < len(players):
-        await context.bot.send_message(tg_id, "Недостаточно кодов для всех игроков.")
-        user = users.find_one({"telegram_id": tg_id})
-        await send_menu(tg_id, user, game, context)
-        return
-    random.shuffle(codes)
-    assigned = codes[: len(players)]
-    for player, code in zip(players, assigned):
-        users.update_one({"_id": player["_id"]}, {"$set": {"code": code}})
-    remaining = codes[len(players) :]
-    games.update_one(
-        {"_id": game["_id"]},
-        {
-            "$set": {
-                "status": "running",
-                "started_at": datetime.utcnow(),
-                "ended_at": None,
-                "codes": remaining,
-            }
-        },
-    )
-    users.update_many({}, {"$set": {"discovered_opponent_ids": []}})
-    # Notify all registered users that the game has started
-    for u in users.find({}):
-        await context.bot.send_message(
-            u["telegram_id"],
-            "Игра началась! Нажмите \"Начать\", чтобы открыть меню.",
-            reply_markup=START_KEYBOARD,
-        )
-    user = users.find_one({"telegram_id": tg_id})
-    await send_menu(tg_id, user, get_game(), context)
-
-
-async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await query.message.delete()
-    tg_id = query.from_user.id
-    game = get_game()
-    if not is_admin(game, tg_id):
-        return
-    if game.get("status") != "running":
-        await context.bot.send_message(tg_id, "Игра не запущена.")
-        user = users.find_one({"telegram_id": tg_id})
-        await send_menu(tg_id, user, game, context)
-        return
-    games.update_one(
-        {"_id": game["_id"]},
-        {"$set": {"status": "ended", "ended_at": datetime.utcnow()}},
-    )
-    await context.bot.send_message(tg_id, "Игра завершена.")
-    user = users.find_one({"telegram_id": tg_id})
-    await send_menu(tg_id, user, get_game(), context)
-
-
-async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await query.message.delete()
-    tg_id = query.from_user.id
-    game = get_game()
-    if not is_admin(game, tg_id):
-        return
-    games.update_one(
-        {"_id": game["_id"]},
-        {
-            "$set": {
-                "status": "waiting",
-                "started_at": None,
-                "ended_at": None,
-                "codes": [],
-            }
-        },
-    )
-    users.delete_many({"telegram_id": {"$nin": ADMIN_IDS}})
-    users.update_many(
-        {"telegram_id": {"$in": ADMIN_IDS}},
-        {
-            "$set": {
-                "alive": True,
-                "kicked_by": None,
-                "discovered_opponent_ids": [],
-                "code": None,
-                "isAdmin": True,
-            }
-        },
-    )
-    await context.bot.send_message(tg_id, "Игра сброшена.")
-    user = users.find_one({"telegram_id": tg_id})
-    await send_menu(tg_id, user, get_game(), context)
-
-
 def main() -> None:
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -490,11 +257,8 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(kick_action, pattern=r"^kick:"))
     application.add_handler(CallbackQueryHandler(confirm_kick, pattern="^confirm_kick$"))
     application.add_handler(CallbackQueryHandler(cancel_kick, pattern="^cancel_kick$"))
-    application.add_handler(CallbackQueryHandler(start_game, pattern="^start_game$"))
-    application.add_handler(CallbackQueryHandler(end_game, pattern="^end_game$"))
-    application.add_handler(CallbackQueryHandler(reset_game, pattern="^reset_game$"))
-    application.add_handler(CallbackQueryHandler(add_codes, pattern="^add_codes$"))
-    application.add_handler(CallbackQueryHandler(player_count, pattern="^player_count$"))
+
+    register_admin_handlers(application)
 
     application.run_polling()
 
