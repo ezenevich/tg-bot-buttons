@@ -103,7 +103,7 @@ async def button_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         elif player.get("code_used"):
             status.append("На руках ✋")
         else:
-            status.append("В игре 🟢")
+            status.append("В игре ⛳")
         lines.append(f"{number} {circle} - {', '.join(status)}")
     buttons = [[InlineKeyboardButton("Назад", callback_data="back_to_menu")]]
     await context.bot.send_message(
