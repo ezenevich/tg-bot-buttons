@@ -4,8 +4,15 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
-from storage import users, games, awaiting_admin_codes, ADMIN_IDS, START_KEYBOARD
-from utils import get_game, is_admin, send_menu, get_name
+from storage import (
+    users,
+    games,
+    awaiting_admin_codes,
+    ADMIN_IDS,
+    START_KEYBOARD,
+    emoji_pairs,
+)
+from utils import get_game, is_admin, send_menu, get_name, number_to_square
 
 
 async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -30,9 +37,52 @@ async def player_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     players = list(users.find({"telegram_id": {"$nin": game.get("admin_ids", [])}}))
     if players:
-        text = "Подключенные игроки:\n" + "\n".join(get_name(p) for p in players)
+        text = "Подключенные игроки:\n" + "\n".join(
+            f"{get_name(p)} {number_to_square(p.get('number'))}" for p in players
+        )
     else:
         text = "Нет подключенных игроков."
+    await context.bot.send_message(tg_id, text)
+    user = users.find_one({"telegram_id": tg_id})
+    await send_menu(tg_id, user, game, context)
+
+
+async def show_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    tg_id = query.from_user.id
+    game = get_game()
+    if not is_admin(game, tg_id):
+        return
+    pairs = list(emoji_pairs.find())
+    text = "Пары:\n" + "\n".join(
+        f"{p['circle']} - {p['square']}" for p in pairs
+    )
+    await context.bot.send_message(tg_id, text)
+    user = users.find_one({"telegram_id": tg_id})
+    await send_menu(tg_id, user, game, context)
+
+
+async def shuffle_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    tg_id = query.from_user.id
+    game = get_game()
+    if not is_admin(game, tg_id):
+        return
+    pairs = list(emoji_pairs.find())
+    circles = [p["circle"] for p in pairs]
+    squares = [p["square"] for p in pairs]
+    random.shuffle(squares)
+    emoji_pairs.delete_many({})
+    for c, s in zip(circles, squares):
+        emoji_pairs.insert_one({"circle": c, "square": s})
+    pairs = list(emoji_pairs.find())
+    text = "Пары перемешаны:\n" + "\n".join(
+        f"{p['circle']} - {p['square']}" for p in pairs
+    )
     await context.bot.send_message(tg_id, text)
     user = users.find_one({"telegram_id": tg_id})
     await send_menu(tg_id, user, game, context)
@@ -140,3 +190,5 @@ def register_admin_handlers(application):
     application.add_handler(CallbackQueryHandler(end_game, pattern="^end_game$"))
     application.add_handler(CallbackQueryHandler(add_codes, pattern="^add_codes$"))
     application.add_handler(CallbackQueryHandler(player_list, pattern="^player_list$"))
+    application.add_handler(CallbackQueryHandler(show_pairs, pattern="^show_pairs$"))
+    application.add_handler(CallbackQueryHandler(shuffle_pairs, pattern="^shuffle_pairs$"))

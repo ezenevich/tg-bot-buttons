@@ -18,7 +18,7 @@ from storage import (
     awaiting_admin_codes,
     START_KEYBOARD,
 )
-from utils import get_name, get_game, is_admin, send_menu
+from utils import get_name, get_game, is_admin, send_menu, number_to_square
 from admin import register_admin_handlers
 
 
@@ -34,6 +34,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
         is_admin_flag = is_admin(game, tg_id)
+        number = None
+        if not is_admin_flag:
+            player_count = users.count_documents({"isAdmin": {"$ne": True}})
+            if player_count >= 9:
+                await update.message.reply_text(
+                    "Нужное количество игроков уже в игре.",
+                    reply_markup=START_KEYBOARD,
+                )
+                return
+            number = player_count + 1
         users.insert_one(
             {
                 "telegram_id": tg_id,
@@ -44,14 +54,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "alive": True,
                 "discovered_opponent_ids": [],
                 "isAdmin": is_admin_flag,
+                "number": number,
             }
         )
         user = users.find_one({"telegram_id": tg_id})
         if not is_admin_flag:
+            square = number_to_square(number)
             for admin_id in game.get("admin_ids", []):
                 await context.bot.send_message(
                     admin_id,
-                    f"Подключился игрок {get_name(user)}",
+                    f"Подключился игрок {get_name(user)} {square}",
                 )
     if not user.get("alive", True):
         kicker = users.find_one({"_id": user.get("kicked_by")})
