@@ -203,7 +203,8 @@ async def list_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     buttons = [
         [
             InlineKeyboardButton(
-                number_to_circle(o.get("number")), callback_data=f"kick:{o['_id']}"
+                number_to_circle(o.get("number")),
+                callback_data=f"confirm_kick:{o['_id']}",
             )
         ]
         for o in opponents
@@ -212,6 +213,39 @@ async def list_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await context.bot.send_message(
         tg_id, "Доступные кнопки:", reply_markup=InlineKeyboardMarkup(buttons)
     )
+
+
+async def confirm_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    opponent_id = query.data.split(":", 1)[1]
+    opponent = users.find_one({"_id": ObjectId(opponent_id)})
+    if not opponent:
+        return
+    square = number_to_square(opponent.get("number"))
+    buttons = [
+        [
+            InlineKeyboardButton("Да", callback_data=f"kick:{opponent_id}"),
+            InlineKeyboardButton("Нет", callback_data="cancel_kick"),
+        ]
+    ]
+    await context.bot.send_message(
+        query.from_user.id,
+        f"Заблокировать игрока {square}?",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def cancel_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    tg_id = query.from_user.id
+    user = users.find_one({"telegram_id": tg_id})
+    game = get_game()
+    if user:
+        await send_menu(tg_id, user, game, context)
 
 
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -246,18 +280,13 @@ async def kick_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     emoji_pairs.update_one(
         {"number": opponent.get("number")}, {"$set": {"blocked": True}}
     )
-    if opponent["telegram_id"] != tg_id:
-        await context.bot.send_message(
-            opponent["telegram_id"], "Вас заблокировали 🚫. Игра окончена."
-        )
+    await context.bot.send_message(
+        opponent["telegram_id"], "Вас заблокировали 🚫. Игра окончена."
+    )
     square = number_to_square(opponent.get("number"))
-    circle = number_to_circle(opponent.get("number"))
-    message = f"Игрок {square}{circle} покидает игру."
+    message = f"Игрок {square} покидает игру."
     recipients = users.find(
-        {
-            "telegram_id": {"$nin": [tg_id, opponent["telegram_id"]]},
-            "alive": True,
-        }
+        {"telegram_id": {"$ne": opponent["telegram_id"]}, "alive": True}
     )
     for r in recipients:
         await context.bot.send_message(r["telegram_id"], message)
@@ -275,6 +304,8 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(code_button, pattern="^menu_code$"))
     application.add_handler(CallbackQueryHandler(list_button, pattern="^menu_list$"))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
+    application.add_handler(CallbackQueryHandler(confirm_kick, pattern=r"^confirm_kick:"))
+    application.add_handler(CallbackQueryHandler(cancel_kick, pattern="^cancel_kick$"))
     application.add_handler(CallbackQueryHandler(kick_action, pattern=r"^kick:"))
 
     register_admin_handlers(application)
