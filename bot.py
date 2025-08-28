@@ -309,7 +309,7 @@ async def confirm_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not opponent:
         return
     circle = number_to_circle(opponent.get("number"))
-    buttons = [
+    keyboard = [
         [
             InlineKeyboardButton("Да", callback_data=f"kick:{opponent_id}"),
             InlineKeyboardButton("Нет", callback_data="cancel_kick"),
@@ -318,7 +318,7 @@ async def confirm_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await context.bot.send_message(
         query.from_user.id,
         f"Нажать {circle} кнопку?",
-        reply_markup=InlineKeyboardMarkup(buttons),
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 

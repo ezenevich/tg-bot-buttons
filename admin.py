@@ -89,12 +89,12 @@ async def show_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"{'заблокирована' if p.get('blocked') else ('занята' if p.get('player_id') else 'свободна')}"
         for p in pairs
     )
-    buttons = [
+    keyboard = [
         [InlineKeyboardButton("Перемешать пары", callback_data="shuffle_pairs")],
         [InlineKeyboardButton("Назад", callback_data="back_to_menu")],
     ]
     await context.bot.send_message(
-        tg_id, text, reply_markup=InlineKeyboardMarkup(buttons)
+        tg_id, text, reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -136,9 +136,9 @@ async def button_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             status.append("В игре ⛳")
         lines.append(f"Особая {s.get('emoji', '🔀')} - {', '.join(status)}")
-    buttons = [[InlineKeyboardButton("Назад", callback_data="back_to_menu")]]
+    keyboard = [[InlineKeyboardButton("Назад", callback_data="back_to_menu")]]
     await context.bot.send_message(
-        tg_id, "\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons)
+        tg_id, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -159,12 +159,12 @@ async def shuffle_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     text = "Пары перемешаны:\n" + "\n".join(
         f"{number_to_square(p['number'])} - {p['circle']}" for p in pairs
     )
-    buttons = [
+    keyboard = [
         [InlineKeyboardButton("Перемешать пары", callback_data="shuffle_pairs")],
         [InlineKeyboardButton("Назад", callback_data="back_to_menu")],
     ]
     await context.bot.send_message(
-        tg_id, text, reply_markup=InlineKeyboardMarkup(buttons)
+        tg_id, text, reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 

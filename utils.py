@@ -42,9 +42,9 @@ async def send_menu(
     if game.get("status") != "running" and not is_admin(game, chat_id):
         await context.bot.send_message(chat_id, "Игра еще не началась.")
         return
-    buttons = []
+    keyboard = []
     if game.get("status") == "running" and not is_admin(game, chat_id):
-        buttons.extend(
+        keyboard.extend(
             [
                 [InlineKeyboardButton("Ввести код", callback_data="menu_code")],
                 [InlineKeyboardButton("Доступные кнопки", callback_data="menu_list")],
@@ -52,19 +52,19 @@ async def send_menu(
         )
     if is_admin(game, chat_id):
         if game.get("status") == "waiting":
-            buttons.append(
+            keyboard.append(
                 [
                     InlineKeyboardButton("Начать игру", callback_data="start_game"),
                     InlineKeyboardButton("Добавить коды", callback_data="add_codes"),
                 ]
             )
-            buttons.append(
+            keyboard.append(
                 [InlineKeyboardButton("Игроки", callback_data="player_list")]
             )
-            buttons.append(
+            keyboard.append(
                 [InlineKeyboardButton("Пары", callback_data="show_pairs")]
             )
-            buttons.append(
+            keyboard.append(
                 [
                     InlineKeyboardButton(
                         "Добавить особую кнопку", callback_data="add_special"
@@ -72,7 +72,7 @@ async def send_menu(
                 ]
             )
         elif game.get("status") == "running":
-            buttons.append(
+            keyboard.append(
                 [
                     InlineKeyboardButton("Завершить игру", callback_data="end_game"),
                     InlineKeyboardButton(
@@ -80,10 +80,10 @@ async def send_menu(
                     ),
                 ]
             )
-            buttons.append(
+            keyboard.append(
                 [InlineKeyboardButton("Кнопки", callback_data="button_status")]
             )
-    if buttons:
+    if keyboard:
         await context.bot.send_message(
-            chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(buttons)
+            chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(keyboard)
         )
