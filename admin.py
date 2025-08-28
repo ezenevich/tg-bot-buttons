@@ -1,7 +1,7 @@
 import random
 from datetime import datetime
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from storage import (
@@ -70,9 +70,13 @@ async def show_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     text = "Пары:\n" + "\n".join(
         f"{number_to_square(p['number'])} - {p['circle']}" for p in pairs
     )
-    await context.bot.send_message(tg_id, text)
-    user = users.find_one({"telegram_id": tg_id})
-    await send_menu(tg_id, user, game, context)
+    buttons = [
+        [InlineKeyboardButton("Перемешать пары", callback_data="shuffle_pairs")],
+        [InlineKeyboardButton("Назад", callback_data="back_to_menu")],
+    ]
+    await context.bot.send_message(
+        tg_id, text, reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
 async def shuffle_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -93,9 +97,13 @@ async def shuffle_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     text = "Пары перемешаны:\n" + "\n".join(
         f"{number_to_square(p['number'])} - {p['circle']}" for p in pairs
     )
-    await context.bot.send_message(tg_id, text)
-    user = users.find_one({"telegram_id": tg_id})
-    await send_menu(tg_id, user, game, context)
+    buttons = [
+        [InlineKeyboardButton("Перемешать пары", callback_data="shuffle_pairs")],
+        [InlineKeyboardButton("Назад", callback_data="back_to_menu")],
+    ]
+    await context.bot.send_message(
+        tg_id, text, reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -136,7 +144,7 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             }
         },
     )
-    users.update_many({}, {"$set": {"discovered_opponent_ids": []}})
+    users.update_many({}, {"$set": {"discovered_opponent_ids": [], "code_used": False}})
     for u in users.find({}):
         await context.bot.send_message(
             u["telegram_id"],
@@ -187,6 +195,7 @@ async def end_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "discovered_opponent_ids": [],
                 "code": None,
                 "isAdmin": True,
+                "code_used": False,
             }
         },
     )

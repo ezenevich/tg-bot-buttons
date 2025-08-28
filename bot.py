@@ -75,7 +75,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
     if not user.get("alive", True):
         kicker = users.find_one({"_id": user.get("kicked_by")})
-        text = f"Игра окончена. Вас выбил {get_name(kicker) if kicker else 'кто-то'}."
+        text = f"Игра окончена. Вас заблокировал {get_name(kicker) if kicker else 'кто-то'}."
         await update.message.reply_text(text, reply_markup=START_KEYBOARD)
         return
     if game.get("status") != "running":
@@ -143,22 +143,28 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Это ваш собственный код!")
         await send_menu(tg_id, user, get_game(), context)
         return
-    opponent = users.find_one({"code": code, "alive": True})
+    opponent = users.find_one(
+        {"code": code, "alive": True, "code_used": {"$ne": True}}
+    )
     if not opponent:
-        await update.message.reply_text("Код не найден.")
+        await update.message.reply_text("Код не найден или уже использован.")
         await send_menu(tg_id, user, get_game(), context)
         return
     if opponent["_id"] in user.get("discovered_opponent_ids", []):
         await update.message.reply_text("Уже найден.")
         await send_menu(tg_id, user, get_game(), context)
         return
+    result = users.update_one(
+        {"_id": opponent["_id"], "code_used": {"$ne": True}},
+        {"$set": {"code_used": True}},
+    )
+    if result.modified_count == 0:
+        await update.message.reply_text("Код не найден или уже использован.")
+        await send_menu(tg_id, user, get_game(), context)
+        return
     users.update_one(
         {"_id": user["_id"]},
         {"$addToSet": {"discovered_opponent_ids": opponent["_id"]}},
-    )
-    users.update_one(
-        {"_id": opponent["_id"]},
-        {"$addToSet": {"discovered_opponent_ids": user["_id"]}},
     )
     await update.message.reply_text(f"Вы обнаружили {get_name(opponent)}.")
     await send_menu(tg_id, user, get_game(), context)
@@ -186,16 +192,20 @@ async def list_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     ids = user.get("discovered_opponent_ids", [])
     opponents = list(users.find({"_id": {"$in": ids}, "alive": True}))
     if not opponents:
-        await context.bot.send_message(tg_id, "Нет доступных противников.")
+        await context.bot.send_message(tg_id, "Нет доступных кнопок.")
         await send_menu(tg_id, user, game, context)
         return
     buttons = [
-        [InlineKeyboardButton(get_name(o), callback_data=f"kick:{o['_id']}")]
+        [
+            InlineKeyboardButton(
+                number_to_circle(o.get("number")), callback_data=f"kick:{o['_id']}"
+            )
+        ]
         for o in opponents
     ]
     buttons.append([InlineKeyboardButton("Назад", callback_data="back_to_menu")])
     await context.bot.send_message(
-        tg_id, "Доступные противники:", reply_markup=InlineKeyboardMarkup(buttons)
+        tg_id, "Доступные кнопки:", reply_markup=InlineKeyboardMarkup(buttons)
     )
 
 
@@ -224,7 +234,7 @@ async def kick_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     ]
     await context.bot.send_message(
         query.from_user.id,
-        "Подтвердить выбивание?",
+        "Подтвердить блокировку игрока?",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
@@ -250,13 +260,13 @@ async def confirm_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         {"$set": {"alive": False, "kicked_by": user["_id"]}},
     )
     if result.modified_count == 0:
-        await context.bot.send_message(tg_id, "Противник уже выбыл.")
+        await context.bot.send_message(tg_id, "Игрок уже заблокирован.")
         await send_menu(tg_id, user, get_game(), context)
         return
-    await context.bot.send_message(tg_id, f"Вы выбили {get_name(opponent)}.")
+    await context.bot.send_message(tg_id, f"Вы заблокировали игрока {get_name(opponent)}.")
     await context.bot.send_message(
         opponent["telegram_id"],
-        f"Вас выбил {get_name(user)}. Игра окончена.",
+        f"Вас заблокировал игрок {get_name(user)}. Игра окончена.",
     )
     await send_menu(tg_id, user, get_game(), context)
 

@@ -47,7 +47,7 @@ async def send_menu(
         buttons.extend(
             [
                 [InlineKeyboardButton("Ввести код", callback_data="menu_code")],
-                [InlineKeyboardButton("Список противников", callback_data="menu_list")],
+                [InlineKeyboardButton("Доступные кнопки", callback_data="menu_list")],
             ]
         )
     if is_admin(game, chat_id):
@@ -62,12 +62,7 @@ async def send_menu(
                 [InlineKeyboardButton("Игроки", callback_data="player_list")]
             )
             buttons.append(
-                [
-                    InlineKeyboardButton("Пары", callback_data="show_pairs"),
-                    InlineKeyboardButton(
-                        "Перемешать пары", callback_data="shuffle_pairs"
-                    ),
-                ]
+                [InlineKeyboardButton("Пары", callback_data="show_pairs")]
             )
         elif game.get("status") == "running":
             buttons.append(
