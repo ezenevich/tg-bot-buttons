@@ -75,6 +75,9 @@ async def send_menu(
             admin_buttons.append(
                 InlineKeyboardButton("Сбросить игру", callback_data="reset_game")
             )
+        admin_buttons.append(
+            InlineKeyboardButton("Кол-во игроков", callback_data="player_count")
+        )
         if admin_buttons:
             buttons.append(admin_buttons)
     if buttons:
@@ -104,25 +107,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     game = get_game()
     user = users.find_one({"telegram_id": tg_id})
     if not user:
-        code = None
-        if not is_admin(game, tg_id):
-            codes = game.get("codes", [])
-            if not codes:
-                await update.message.reply_text(
-                    "Нет доступных кодов. Свяжитесь с админом."
-                )
-                return
-            code = random.choice(codes)
-            games.update_one({"_id": game["_id"]}, {"$pull": {"codes": code}})
+        is_admin_flag = is_admin(game, tg_id)
         users.insert_one(
             {
                 "telegram_id": tg_id,
                 "username": update.effective_user.username,
                 "first_name": update.effective_user.first_name,
                 "last_name": update.effective_user.last_name,
-                "code": code,
+                "code": None,
                 "alive": True,
                 "discovered_opponent_ids": [],
+                "isAdmin": is_admin_flag,
             }
         )
         user = users.find_one({"telegram_id": tg_id})
@@ -327,6 +322,20 @@ async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await context.bot.send_message(tg_id, "Отправьте коды через пробел.")
 
 
+async def player_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    tg_id = query.from_user.id
+    game = get_game()
+    if not is_admin(game, tg_id):
+        return
+    count = users.count_documents({"telegram_id": {"$nin": game.get("admin_ids", [])}})
+    await context.bot.send_message(tg_id, f"Подключено игроков: {count}")
+    user = users.find_one({"telegram_id": tg_id})
+    await send_menu(tg_id, user, game, context)
+
+
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -340,10 +349,29 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         user = users.find_one({"telegram_id": tg_id})
         await send_menu(tg_id, user, game, context)
         return
+    players = list(
+        users.find({"telegram_id": {"$nin": game.get("admin_ids", [])}, "code": None})
+    )
+    codes = game.get("codes", [])
+    if len(codes) < len(players):
+        await context.bot.send_message(tg_id, "Недостаточно кодов для всех игроков.")
+        user = users.find_one({"telegram_id": tg_id})
+        await send_menu(tg_id, user, game, context)
+        return
+    random.shuffle(codes)
+    assigned = codes[: len(players)]
+    for player, code in zip(players, assigned):
+        users.update_one({"_id": player["_id"]}, {"$set": {"code": code}})
+    remaining = codes[len(players) :]
     games.update_one(
         {"_id": game["_id"]},
         {
-            "$set": {"status": "running", "started_at": datetime.utcnow(), "ended_at": None}
+            "$set": {
+                "status": "running",
+                "started_at": datetime.utcnow(),
+                "ended_at": None,
+                "codes": remaining,
+            }
         },
     )
     users.update_many({}, {"$set": {"discovered_opponent_ids": []}})
@@ -402,6 +430,7 @@ async def reset_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 "kicked_by": None,
                 "discovered_opponent_ids": [],
                 "code": None,
+                "isAdmin": True,
             }
         },
     )
@@ -425,6 +454,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(end_game, pattern="^end_game$"))
     application.add_handler(CallbackQueryHandler(reset_game, pattern="^reset_game$"))
     application.add_handler(CallbackQueryHandler(add_codes, pattern="^add_codes$"))
+    application.add_handler(CallbackQueryHandler(player_count, pattern="^player_count$"))
 
     application.run_polling()
 
