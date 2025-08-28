@@ -81,6 +81,35 @@ async def show_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+async def button_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    tg_id = query.from_user.id
+    game = get_game()
+    if not is_admin(game, tg_id):
+        return
+    pairs = list(emoji_pairs.find().sort("number", 1))
+    lines = []
+    for p in pairs:
+        number = number_to_square(p["number"])
+        circle = p["circle"]
+        player = users.find_one({"number": p["number"]})
+        if not p.get("taken") or not player:
+            status = "свободна"
+        elif not player.get("alive", True) or p.get("blocked"):
+            status = "использована"
+        elif player.get("code_used"):
+            status = "найдена"
+        else:
+            status = "свободна"
+        lines.append(f"{number} {circle} - {status}")
+    buttons = [[InlineKeyboardButton("Назад", callback_data="back_to_menu")]]
+    await context.bot.send_message(
+        tg_id, "\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
 async def shuffle_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -216,3 +245,6 @@ def register_admin_handlers(application):
     application.add_handler(CallbackQueryHandler(player_list, pattern="^player_list$"))
     application.add_handler(CallbackQueryHandler(show_pairs, pattern="^show_pairs$"))
     application.add_handler(CallbackQueryHandler(shuffle_pairs, pattern="^shuffle_pairs$"))
+    application.add_handler(
+        CallbackQueryHandler(button_status, pattern="^button_status$")
+    )
