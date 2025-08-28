@@ -18,7 +18,14 @@ from storage import (
     awaiting_admin_codes,
     START_KEYBOARD,
 )
-from utils import get_name, get_game, is_admin, send_menu, number_to_square
+from utils import (
+    get_name,
+    get_game,
+    is_admin,
+    send_menu,
+    number_to_square,
+    number_to_circle,
+)
 from admin import register_admin_handlers
 
 
@@ -60,10 +67,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = users.find_one({"telegram_id": tg_id})
         if not is_admin_flag:
             square = number_to_square(number)
+            circle = number_to_circle(number)
             for admin_id in game.get("admin_ids", []):
                 await context.bot.send_message(
                     admin_id,
-                    f"Подключился игрок {get_name(user)} {square}",
+                    f"Подключился игрок {get_name(user)} {square}{circle}",
                 )
     if not user.get("alive", True):
         kicker = users.find_one({"_id": user.get("kicked_by")})
