@@ -232,7 +232,7 @@ async def confirm_kick(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     ]
     await context.bot.send_message(
         query.from_user.id,
-        f"Заблокировать игрока {square}?",
+        f"Нажать кнопку {square}?",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
