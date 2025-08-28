@@ -30,9 +30,10 @@ awaiting_admin_codes: Set[int] = set()
 CIRCLE_EMOJIS = ["🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫", "⚪"]
 SQUARE_NUMBERS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
 
+# Store mapping between number (1-9) and circle color
 if emoji_pairs.count_documents({}) == 0:
-    for circle, square in zip(CIRCLE_EMOJIS, SQUARE_NUMBERS):
-        emoji_pairs.insert_one({"circle": circle, "square": square})
+    for i, circle in enumerate(CIRCLE_EMOJIS, start=1):
+        emoji_pairs.insert_one({"number": i, "circle": circle})
 
 # Reply keyboard with a physical "Начать" button so players can always return to the menu
 START_KEYBOARD = ReplyKeyboardMarkup([[KeyboardButton("Начать")]], resize_keyboard=True)

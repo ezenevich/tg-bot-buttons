@@ -3,7 +3,7 @@ from typing import Dict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from storage import games, ADMIN_IDS, START_KEYBOARD, SQUARE_NUMBERS
+from storage import games, ADMIN_IDS, START_KEYBOARD, SQUARE_NUMBERS, emoji_pairs
 
 
 def get_name(user: Dict) -> str:
@@ -28,6 +28,14 @@ def number_to_square(n) -> str:
     return ""
 
 
+def number_to_circle(n) -> str:
+    if isinstance(n, int):
+        pair = emoji_pairs.find_one({"number": n})
+        if pair:
+            return pair.get("circle", "")
+    return ""
+
+
 async def send_menu(
     chat_id: int, user: Dict, game: Dict, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -48,32 +56,33 @@ async def send_menu(
             ]
         )
     if is_admin(game, chat_id):
-        admin_buttons = []
         if game.get("status") == "waiting":
-            admin_buttons.append(
-                InlineKeyboardButton("Начать игру", callback_data="start_game")
+            buttons.append(
+                [
+                    InlineKeyboardButton("Начать игру", callback_data="start_game"),
+                    InlineKeyboardButton("Добавить коды", callback_data="add_codes"),
+                ]
             )
-            admin_buttons.append(
-                InlineKeyboardButton("Добавить коды", callback_data="add_codes")
+            buttons.append(
+                [InlineKeyboardButton("Игроки", callback_data="player_list")]
+            )
+            buttons.append(
+                [
+                    InlineKeyboardButton("Пары", callback_data="show_pairs"),
+                    InlineKeyboardButton(
+                        "Перемешать пары", callback_data="shuffle_pairs"
+                    ),
+                ]
             )
         elif game.get("status") == "running":
-            admin_buttons.append(
-                InlineKeyboardButton("Завершить игру", callback_data="end_game")
+            buttons.append(
+                [
+                    InlineKeyboardButton("Завершить игру", callback_data="end_game"),
+                    InlineKeyboardButton(
+                        "Список игроков", callback_data="player_list"
+                    ),
+                ]
             )
-            admin_buttons.append(
-                InlineKeyboardButton("Добавить коды", callback_data="add_codes")
-            )
-        admin_buttons.append(
-            InlineKeyboardButton("Игроки", callback_data="player_list")
-        )
-        if admin_buttons:
-            buttons.append(admin_buttons)
-        buttons.append(
-            [
-                InlineKeyboardButton("Пары", callback_data="show_pairs"),
-                InlineKeyboardButton("Перемешать пары", callback_data="shuffle_pairs"),
-            ]
-        )
     if buttons:
         await context.bot.send_message(
             chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(buttons)

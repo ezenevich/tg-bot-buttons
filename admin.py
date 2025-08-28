@@ -12,7 +12,14 @@ from storage import (
     START_KEYBOARD,
     emoji_pairs,
 )
-from utils import get_game, is_admin, send_menu, get_name, number_to_square
+from utils import (
+    get_game,
+    is_admin,
+    send_menu,
+    get_name,
+    number_to_square,
+    number_to_circle,
+)
 
 
 async def add_codes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36,9 +43,13 @@ async def player_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not is_admin(game, tg_id):
         return
     players = list(users.find({"telegram_id": {"$nin": game.get("admin_ids", [])}}))
+    players.sort(key=lambda p: p.get("number", 0))
     if players:
         text = "Подключенные игроки:\n" + "\n".join(
-            f"{get_name(p)} {number_to_square(p.get('number'))}" for p in players
+            f"{get_name(p)} {number_to_square(p.get('number'))}{number_to_circle(p.get('number'))} "
+            f"{p.get('code') or '-'} "
+            f"{'жив ✅' if p.get('alive', True) else 'выбыл 🚫'}"
+            for p in players
         )
     else:
         text = "Нет подключенных игроков."
@@ -55,9 +66,9 @@ async def show_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     game = get_game()
     if not is_admin(game, tg_id):
         return
-    pairs = list(emoji_pairs.find())
+    pairs = list(emoji_pairs.find().sort("number", 1))
     text = "Пары:\n" + "\n".join(
-        f"{p['circle']} - {p['square']}" for p in pairs
+        f"{number_to_square(p['number'])} - {p['circle']}" for p in pairs
     )
     await context.bot.send_message(tg_id, text)
     user = users.find_one({"telegram_id": tg_id})
@@ -72,16 +83,15 @@ async def shuffle_pairs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     game = get_game()
     if not is_admin(game, tg_id):
         return
-    pairs = list(emoji_pairs.find())
+    pairs = list(emoji_pairs.find().sort("number", 1))
     circles = [p["circle"] for p in pairs]
-    squares = [p["square"] for p in pairs]
-    random.shuffle(squares)
+    random.shuffle(circles)
     emoji_pairs.delete_many({})
-    for c, s in zip(circles, squares):
-        emoji_pairs.insert_one({"circle": c, "square": s})
-    pairs = list(emoji_pairs.find())
+    for i, circle in enumerate(circles, start=1):
+        emoji_pairs.insert_one({"number": i, "circle": circle})
+    pairs = list(emoji_pairs.find().sort("number", 1))
     text = "Пары перемешаны:\n" + "\n".join(
-        f"{p['circle']} - {p['square']}" for p in pairs
+        f"{number_to_square(p['number'])} - {p['circle']}" for p in pairs
     )
     await context.bot.send_message(tg_id, text)
     user = users.find_one({"telegram_id": tg_id})
