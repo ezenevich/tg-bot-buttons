@@ -6,7 +6,13 @@ from typing import Dict, Set
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -37,10 +43,19 @@ awaiting_code: Set[int] = set()
 pending_kick: Dict[int, str] = {}
 awaiting_admin_codes: Set[int] = set()
 
+# Reply keyboard with a physical "Начать" button so players can always return to the menu
+START_KEYBOARD = ReplyKeyboardMarkup([[KeyboardButton("Начать")]], resize_keyboard=True)
+
 
 async def send_menu(
     chat_id: int, user: Dict, game: Dict, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
+    # Always remind players about the "Начать" button
+    await context.bot.send_message(
+        chat_id,
+        "Для возвращения в меню используйте кнопку \"Начать\"",
+        reply_markup=START_KEYBOARD,
+    )
     if game.get("status") != "running" and not is_admin(game, chat_id):
         await context.bot.send_message(chat_id, "Игра еще не началась.")
         return
@@ -107,6 +122,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     game = get_game()
     user = users.find_one({"telegram_id": tg_id})
     if not user:
+        if game.get("status") == "running" and not is_admin(game, tg_id):
+            await update.message.reply_text(
+                "Игра уже идет, присоединиться нельзя.",
+                reply_markup=START_KEYBOARD,
+            )
+            return
         is_admin_flag = is_admin(game, tg_id)
         users.insert_one(
             {
@@ -124,13 +145,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not user.get("alive", True):
         kicker = users.find_one({"_id": user.get("kicked_by")})
         text = f"Игра окончена. Вас выбил {get_name(kicker) if kicker else 'кто-то'}."
-        await update.message.reply_text(text)
+        await update.message.reply_text(text, reply_markup=START_KEYBOARD)
         return
     if game.get("status") != "running":
         if is_admin(game, tg_id):
             await send_menu(tg_id, user, game, context)
         else:
-            await update.message.reply_text("Игра еще не началась.")
+            await update.message.reply_text(
+                "Игра еще не началась.", reply_markup=START_KEYBOARD
+            )
         return
     await send_menu(tg_id, user, game, context)
 
@@ -143,12 +166,16 @@ async def code_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     game = get_game()
     user = users.find_one({"telegram_id": tg_id})
     if game.get("status") != "running":
-        await context.bot.send_message(tg_id, "Игра еще не началась.")
+        await context.bot.send_message(
+            tg_id, "Игра еще не началась.", reply_markup=START_KEYBOARD
+        )
         if user and is_admin(game, tg_id):
             await send_menu(tg_id, user, game, context)
         return
     if not user or not user.get("alive", True):
-        await context.bot.send_message(tg_id, "Игра окончена.")
+        await context.bot.send_message(
+            tg_id, "Игра окончена.", reply_markup=START_KEYBOARD
+        )
         return
     awaiting_code.add(tg_id)
     await context.bot.send_message(tg_id, "Отправьте код.")
@@ -157,6 +184,9 @@ async def code_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tg_id = update.effective_user.id
     text = update.message.text.strip()
+    if text.lower() == "начать":
+        await start(update, context)
+        return
     if tg_id in awaiting_admin_codes:
         game = get_game()
         codes = [c.strip().upper() for c in text.split() if c.strip()]
@@ -214,12 +244,16 @@ async def list_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     game = get_game()
     user = users.find_one({"telegram_id": tg_id})
     if game.get("status") != "running":
-        await context.bot.send_message(tg_id, "Игра еще не началась.")
+        await context.bot.send_message(
+            tg_id, "Игра еще не началась.", reply_markup=START_KEYBOARD
+        )
         if user and is_admin(game, tg_id):
             await send_menu(tg_id, user, game, context)
         return
     if not user or not user.get("alive", True):
-        await context.bot.send_message(tg_id, "Игра окончена.")
+        await context.bot.send_message(
+            tg_id, "Игра окончена.", reply_markup=START_KEYBOARD
+        )
         return
     ids = user.get("discovered_opponent_ids", [])
     opponents = list(users.find({"_id": {"$in": ids}, "alive": True}))
@@ -375,7 +409,13 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         },
     )
     users.update_many({}, {"$set": {"discovered_opponent_ids": []}})
-    await context.bot.send_message(tg_id, "Игра началась!")
+    # Notify all registered users that the game has started
+    for u in users.find({}):
+        await context.bot.send_message(
+            u["telegram_id"],
+            "Игра началась! Нажмите \"Начать\", чтобы открыть меню.",
+            reply_markup=START_KEYBOARD,
+        )
     user = users.find_one({"telegram_id": tg_id})
     await send_menu(tg_id, user, get_game(), context)
 
