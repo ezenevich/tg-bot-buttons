@@ -3,7 +3,7 @@ from typing import Dict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from storage import games, ADMIN_IDS, START_KEYBOARD
+from storage import games, ADMIN_IDS, START_KEYBOARD, SQUARE_NUMBERS
 
 
 def get_name(user: Dict) -> str:
@@ -20,6 +20,12 @@ def get_game() -> Dict:
 
 def is_admin(game: Dict, tg_id: int) -> bool:
     return tg_id in game.get("admin_ids", [])
+
+
+def number_to_square(n) -> str:
+    if isinstance(n, int) and 1 <= n <= len(SQUARE_NUMBERS):
+        return SQUARE_NUMBERS[n - 1]
+    return ""
 
 
 async def send_menu(
@@ -62,6 +68,12 @@ async def send_menu(
         )
         if admin_buttons:
             buttons.append(admin_buttons)
+        buttons.append(
+            [
+                InlineKeyboardButton("Пары", callback_data="show_pairs"),
+                InlineKeyboardButton("Перемешать пары", callback_data="shuffle_pairs"),
+            ]
+        )
     if buttons:
         await context.bot.send_message(
             chat_id, "Выберите действие:", reply_markup=InlineKeyboardMarkup(buttons)
