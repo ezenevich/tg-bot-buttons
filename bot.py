@@ -368,7 +368,7 @@ async def use_special(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     users.update_one(
         {"_id": user["_id"]}, {"$pull": {"special_button_ids": special["_id"]}}
     )
-    await context.bot.send_message(tg_id, "Цвета и номера перемешаны!")
+    await context.bot.send_message(tg_id, "Кнопки изменили свой цвет!")
     await send_menu(tg_id, user, get_game(), context)
 
 
